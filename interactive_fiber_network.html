@@ -1,0 +1,83 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Интерактивная карта волоконно-оптической сети</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body { margin: 0; padding: 10px; font-family: Arial, sans-serif; }
+        .info-panel {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            max-width: 300px;
+            z-index: 1000;
+        }
+        #plot { height: calc(100vh - 20px); }
+    </style>
+</head>
+<body>
+    <div class="info-panel">
+        <h3>Инструкция:</h3>
+        <p>• Кликните на любое здание (оранжевые точки) для построения нового маршрута</p>
+        <p>• Красная линия показывает текущий маршрут от АТС до выбранного здания</p>
+        <p>• Маршрут проходит через ближайшую муфту</p>
+        <div id="status">Готов к работе</div>
+    </div>
+    <div id="plot"></div>
+    
+    <script>
+        var plotData = {"data":[{"hoverinfo":"skip","lat":[51.13,51.13,51.13],"line":{"color":"lightgray","width":2},"lon":[71.47,71.48,71.49],"mode":"lines","name":"\u0414\u043e\u0440\u043e\u0433\u0438","showlegend":false,"type":"scattermap"},{"hoverinfo":"skip","lat":[51.14,51.14,51.14],"line":{"color":"lightgray","width":2},"lon":[71.47,71.48,71.49],"mode":"lines","name":"\u0414\u043e\u0440\u043e\u0433\u0438","showlegend":false,"type":"scattermap"},{"hoverinfo":"skip","lat":[51.13,51.14],"line":{"color":"lightgray","width":2},"lon":[71.48,71.48],"mode":"lines","name":"\u0414\u043e\u0440\u043e\u0433\u0438","showlegend":false,"type":"scattermap"},{"hoverinfo":"text","lat":[51.133,51.137,51.134],"lon":[71.473,71.478,71.482],"marker":{"color":"blue","size":10},"mode":"markers","name":"\u041a\u043e\u043b\u043e\u0434\u0446\u044b","text":["\u041a\u043e\u043b\u043e\u0434\u0435\u0446: Test Well 1","\u041a\u043e\u043b\u043e\u0434\u0435\u0446: Test Well 2","\u041a\u043e\u043b\u043e\u0434\u0435\u0446: Test Well 3"],"type":"scattermap"},{"hoverinfo":"text","lat":[51.135000000000005,51.138000000000005],"lon":[71.475,71.485],"marker":{"color":"red","size":10},"mode":"markers","name":"\u041c\u0443\u0444\u0442\u044b","text":["\u041c\u0443\u0444\u0442\u0430 ID: 1, \u0421\u0432\u043e\u0431\u043e\u0434\u043d\u043e: 16","\u041c\u0443\u0444\u0442\u0430 ID: 2, \u0421\u0432\u043e\u0431\u043e\u0434\u043d\u043e: 12"],"type":"scattermap"},{"customdata":[0,1,2,3,4],"hoverinfo":"text","lat":[51.13700000000001,51.14000000000001,51.134,51.138,51.133],"lon":[71.47699999999999,71.483,71.476,71.475,71.485],"marker":{"color":"darkorange","size":10,"symbol":"square"},"mode":"markers","name":"\u0422\u0435\u0441\u0442\u043e\u0432\u044b\u0435 \u0437\u0434\u0430\u043d\u0438\u044f","text":["\u0422\u0435\u0441\u0442\u043e\u0432\u043e\u0435 \u0437\u0434\u0430\u043d\u0438\u0435 1\u003cbr\u003e\u0416\u0438\u0442\u0435\u043b\u0435\u0439: 304\u003cbr\u003e\u041a\u043b\u0438\u043a\u043d\u0438\u0442\u0435 \u0434\u043b\u044f \u0432\u044b\u0431\u043e\u0440\u0430","\u0422\u0435\u0441\u0442\u043e\u0432\u043e\u0435 \u0437\u0434\u0430\u043d\u0438\u0435 2\u003cbr\u003e\u0416\u0438\u0442\u0435\u043b\u0435\u0439: 256\u003cbr\u003e\u041a\u043b\u0438\u043a\u043d\u0438\u0442\u0435 \u0434\u043b\u044f \u0432\u044b\u0431\u043e\u0440\u0430","\u0422\u0435\u0441\u0442\u043e\u0432\u043e\u0435 \u0437\u0434\u0430\u043d\u0438\u0435 3\u003cbr\u003e\u0416\u0438\u0442\u0435\u043b\u0435\u0439: 176\u003cbr\u003e\u041a\u043b\u0438\u043a\u043d\u0438\u0442\u0435 \u0434\u043b\u044f \u0432\u044b\u0431\u043e\u0440\u0430","\u0422\u0435\u0441\u0442\u043e\u0432\u043e\u0435 \u0437\u0434\u0430\u043d\u0438\u0435 4\u003cbr\u003e\u0416\u0438\u0442\u0435\u043b\u0435\u0439: 187\u003cbr\u003e\u041a\u043b\u0438\u043a\u043d\u0438\u0442\u0435 \u0434\u043b\u044f \u0432\u044b\u0431\u043e\u0440\u0430","\u0422\u0435\u0441\u0442\u043e\u0432\u043e\u0435 \u0437\u0434\u0430\u043d\u0438\u0435 5\u003cbr\u003e\u0416\u0438\u0442\u0435\u043b\u0435\u0439: 117\u003cbr\u003e\u041a\u043b\u0438\u043a\u043d\u0438\u0442\u0435 \u0434\u043b\u044f \u0432\u044b\u0431\u043e\u0440\u0430"],"type":"scattermap"},{"hoverinfo":"text","lat":[51.13],"lon":[71.47],"marker":{"color":"magenta","size":15,"symbol":"square"},"mode":"markers","name":"\u0410\u0422\u0421","text":["\u0410\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0430\u044f \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u043d\u0430\u044f \u0441\u0442\u0430\u043d\u0446\u0438\u044f"],"type":"scattermap"},{"hoverinfo":"none","lat":[51.13,51.13,51.14,51.138000000000005,51.14,51.14000000000001],"line":{"color":"red","width":4},"lon":[71.47,71.48,71.48,71.485,71.48,71.483],"marker":{"color":"red","size":6},"mode":"lines+markers","name":"\u041c\u0430\u0440\u0448\u0440\u0443\u0442","type":"scattermap"},{"hoverinfo":"text","lat":[51.14000000000001],"lon":[71.483],"marker":{"color":"black","size":15,"symbol":"star"},"mode":"markers","name":"\u0426\u0435\u043b\u044c","text":["\u0412\u044b\u0431\u0440\u0430\u043d\u043d\u043e\u0435 \u0437\u0434\u0430\u043d\u0438\u0435"],"type":"scattermap"}],"layout":{"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"legend":{"x":0.01,"y":0.99,"bgcolor":"rgba(255, 255, 255, 0.8)","bordercolor":"rgba(0, 0, 0, 0.2)","borderwidth":1},"mapbox":{"center":{"lat":51.135000000000005,"lon":71.47999999999999},"style":"open-street-map","zoom":13},"margin":{"l":0,"r":0,"t":60,"b":0},"title":{"text":"\u0418\u043d\u0442\u0435\u0440\u0430\u043a\u0442\u0438\u0432\u043d\u0430\u044f \u043a\u0430\u0440\u0442\u0430 \u0432\u043e\u043b\u043e\u043a\u043e\u043d\u043d\u043e-\u043e\u043f\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0439 \u0441\u0435\u0442\u0438\u003cbr\u003e\u003csub\u003e\u041a\u043b\u0438\u043a\u043d\u0438\u0442\u0435 \u043d\u0430 \u0437\u0434\u0430\u043d\u0438\u0435 \u0434\u043b\u044f \u043f\u043e\u0441\u0442\u0440\u043e\u0435\u043d\u0438\u044f \u043d\u043e\u0432\u043e\u0433\u043e \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0430\u003c\u002fsub\u003e"},"showlegend":true,"height":700}};
+        var plotDiv = document.getElementById('plot');
+        var statusDiv = document.getElementById('status');
+        
+        // Parse the JSON data
+        var data = JSON.parse(plotData).data;
+        var layout = JSON.parse(plotData).layout;
+        
+        // Create the plot
+        Plotly.newPlot(plotDiv, data, layout, {responsive: true});
+        
+        // Handle clicks on buildings
+        plotDiv.on('plotly_click', function(eventData) {
+            var point = eventData.points[0];
+            
+            // Check if clicked on buildings or test buildings
+            if ((point.data.name === 'Здания' || point.data.name === 'Тестовые здания') && 
+                point.customdata !== undefined) {
+                
+                var buildingIndex = point.customdata;
+                var buildingInfo = point.text.split('<br>')[0];
+                
+                statusDiv.innerHTML = 'Выбрано: ' + buildingInfo + '<br>Расчет нового маршрута...';
+                
+                // Here you would normally send a request to your Python backend
+                // For demo purposes, we'll just show the selection
+                setTimeout(function() {
+                    statusDiv.innerHTML = 'Маршрут обновлен для: ' + buildingInfo;
+                }, 1000);
+                
+                console.log('Selected building index:', buildingIndex);
+                console.log('Building info:', buildingInfo);
+            }
+        });
+        
+        // Add hover effects
+        plotDiv.on('plotly_hover', function(eventData) {
+            var point = eventData.points[0];
+            if (point.data.name === 'Здания' || point.data.name === 'Тестовые здания') {
+                plotDiv.style.cursor = 'pointer';
+            }
+        });
+        
+        plotDiv.on('plotly_unhover', function() {
+            plotDiv.style.cursor = 'default';
+        });
+    </script>
+</body>
+</html>
+        
