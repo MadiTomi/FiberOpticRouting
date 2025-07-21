@@ -8,6 +8,7 @@ import heapq
 import os
 import random
 import plotly.io as pio
+import shapely.geometry
 
 class FiberNetworkFromRealData:
     def __init__(self, roads_file=None, muffs_file=None, manholes_file=None, buildings_file=None, building_centers_file=None):
@@ -539,6 +540,34 @@ class FiberNetworkFromRealData:
         # Показываем график
         fig.show()
 
+    def path_crosses_building(self, path_coords):
+        """Check if any segment of the path crosses a building polygon."""
+        for i in range(len(path_coords) - 1):
+            seg = shapely.geometry.LineString([path_coords[i], path_coords[i+1]])
+            for b in self.building_polygons:
+                geom = b['geometry']
+                if geom['type'] == 'Polygon':
+                    poly = shapely.geometry.Polygon(geom['coordinates'][0])
+                    if seg.crosses(poly) or seg.within(poly) or seg.touches(poly):
+                        return True
+                elif geom['type'] == 'MultiPolygon':
+                    for poly_coords in geom['coordinates']:
+                        poly = shapely.geometry.Polygon(poly_coords[0])
+                        if seg.crosses(poly) or seg.within(poly) or seg.touches(poly):
+                            return True
+        return False
+
+    def path_total_distance(self, path_coords):
+        """Calculate the total distance of the path in meters (approx, using lat/lon)."""
+        total = 0
+        for i in range(len(path_coords) - 1):
+            x1, y1 = path_coords[i]
+            x2, y2 = path_coords[i+1]
+            # Approximate conversion: 1 deg ~ 111139 meters
+            dist = math.sqrt((x2 - x1)**2 + (y2 - y1)**2) * 111139
+            total += dist
+        return total
+
 if __name__ == "__main__":
     import random
     import plotly.io as pio
@@ -593,7 +622,12 @@ if __name__ == "__main__":
     print(f"Ближайшая муфта: ID {nearest_mufta[3]}, координаты: ({nearest_mufta[0]}, {nearest_mufta[1]}), расстояние: {distance:.2f} м, свободно волокон: {nearest_mufta[2]}")
 
     path = network.find_path_through_infrastructure(building_point, (nearest_mufta[0], nearest_mufta[1]))
+    if network.path_crosses_building(path):
+        print("ВНИМАНИЕ: Найденный маршрут пересекает жилую зону (здание). Проверьте входные данные или попробуйте другое здание/муфту.")
+        exit(1)
     print(f"Маршрут (здание → муфта): {path}")
+    total_distance = network.path_total_distance(path)
+    print(f"Общая длина маршрута: {total_distance:.2f} м")
 
     try:
         network.visualize_path_plotly(start=building_point, end=(nearest_mufta[0], nearest_mufta[1]), path_coords=path, fibers_needed=fibers_needed, mufta=nearest_mufta)
