@@ -8,6 +8,7 @@ import heapq
 import os
 import random
 import plotly.io as pio
+import shapely.geometry
 
 class FiberNetworkFromRealData:
     def __init__(self, roads_file=None, muffs_file=None, manholes_file=None, buildings_file=None, building_centers_file=None):
@@ -309,7 +310,7 @@ class FiberNetworkFromRealData:
         return nearest_mufta, min_distance
 
     def find_path_through_infrastructure(self, start, end):
-        """Находит путь через дорожную сеть и колодцы."""
+        """Находит путь через дорожную сеть, не пересекающую здания (living areas)."""
         def find_nearest_road_node(point):
             min_dist = float('inf')
             nearest_node_id = None
@@ -333,18 +334,20 @@ class FiberNetworkFromRealData:
                 if current_node == end_node_id:
                     return [self.road_nodes[nid] for nid in path]
                 for neighbor, weight in self.road_graph.get(current_node, []):
-                    if neighbor not in visited:
+                    # Check if the edge crosses any building polygon
+                    line = shapely.geometry.LineString([
+                        self.road_nodes[current_node],
+                        self.road_nodes[neighbor]
+                    ])
+                    crosses_building = False
+                    for b in self.building_polygons:
+                        poly = shapely.geometry.shape(b['geometry'])
+                        if line.crosses(poly) or line.within(poly) or line.intersects(poly):
+                            crosses_building = True
+                            break
+                    if not crosses_building and neighbor not in visited:
                         heapq.heappush(min_heap, (cost + weight, neighbor, path))
             return []
-
-        path_coords = [start]
-        for well in self.wells:
-            wx, wy, _, _ = well
-            dist_to_start = math.hypot(start[0] - wx, start[1] - wy)
-            dist_to_end = math.hypot(end[0] - wx, end[1] - wy)
-            if dist_to_start < 0.005 and dist_to_end < 0.005:
-                path_coords.append((wx, wy))
-        path_coords.append(end)
 
         if self.road_nodes:
             start_node_id = find_nearest_road_node(start)
@@ -357,7 +360,8 @@ class FiberNetworkFromRealData:
                     if road_path[-1] != end:
                         road_path.append(end)
                     return road_path
-        return path_coords
+        # Fallback: direct line (not recommended)
+        return [start, end]
 
     def visualize_path_plotly(self, start, end, path_coords, fibers_needed, mufta):
         """Визуализирует сеть и маршрут с помощью Plotly."""
@@ -594,6 +598,18 @@ if __name__ == "__main__":
 
     path = network.find_path_through_infrastructure(building_point, (nearest_mufta[0], nearest_mufta[1]))
     print(f"Маршрут (здание → муфта): {path}")
+    # Calculate total distance
+    if len(path) > 1:
+        total_distance = 0
+        for i in range(1, len(path)):
+            x0, y0 = path[i-1]
+            x1, y1 = path[i]
+            # Approximate meters (assuming coordinates are degrees, use haversine or simple scale)
+            segment = math.sqrt((x1 - x0)**2 + (y1 - y0)**2) * 111139
+            total_distance += segment
+        print(f"Общая длина маршрута: {total_distance:.2f} м")
+    else:
+        print("Маршрут не найден или слишком короткий.")
 
     try:
         network.visualize_path_plotly(start=building_point, end=(nearest_mufta[0], nearest_mufta[1]), path_coords=path, fibers_needed=fibers_needed, mufta=nearest_mufta)
