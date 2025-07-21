@@ -20,6 +20,7 @@ class FiberNetworkFromRealData:
         self.building_polygons = []
         self.test_buildings = []
         self.min_x = self.max_x = self.min_y = self.max_y = 0
+        self.potential_manholes = []  # Store identified intersections as potential manholes
         self.load_all_data(roads_file, muffs_file, manholes_file, buildings_file, building_centers_file)
 
     def load_all_data(self, roads_file, muffs_file, manholes_file, buildings_file, building_centers_file):
@@ -41,6 +42,7 @@ class FiberNetworkFromRealData:
 
         self._build_road_graph()
         self._calculate_bounds()
+        self._identify_intersections()  # Identify road intersections as potential manholes
 
         if not self.buildings:
             self._create_test_buildings()
@@ -231,6 +233,46 @@ class FiberNetworkFromRealData:
         """Построение графа дорожной сети (выполняется в _add_road_segment)."""
         pass
 
+    def _identify_intersections(self):
+        """Идентифицирует пересечения дорог как потенциальные колодцы."""
+        print("\n=== АНАЛИЗ ПЕРЕСЕЧЕНИЙ ДОРОГ ===")
+        
+        # Count connections for each node to identify intersections
+        node_connections = defaultdict(int)
+        for node_id, neighbors in self.road_graph.items():
+            node_connections[node_id] = len(neighbors)
+        
+        # Find intersections (nodes with 3+ connections)
+        intersection_count = 0
+        for node_id, connection_count in node_connections.items():
+            if connection_count >= 3:  # Intersection point
+                x, y = self.road_nodes[node_id]
+                
+                # Check if it's already a manhole or mufta
+                is_existing_infrastructure = False
+                for well in self.wells:
+                    if abs(well[0] - x) < 1e-5 and abs(well[1] - y) < 1e-5:
+                        is_existing_infrastructure = True
+                        break
+                for muff in self.muffs:
+                    if abs(muff[0] - x) < 1e-5 and abs(muff[1] - y) < 1e-5:
+                        is_existing_infrastructure = True
+                        break
+                
+                if not is_existing_infrastructure:
+                    intersection_count += 1
+                    manhole_id = f"POTENTIAL_MH_{intersection_count:03d}"
+                    self.potential_manholes.append({
+                        'id': manhole_id,
+                        'coordinates': (x, y),
+                        'connections': connection_count,
+                        'node_id': node_id
+                    })
+                    print(f"Потенциальный колодец {manhole_id}: координаты ({x:.6f}, {y:.6f}), соединений: {connection_count}")
+        
+        print(f"\nВсего найдено потенциальных колодцев: {len(self.potential_manholes)}")
+        print("=" * 50)
+
     def _calculate_bounds(self):
         """Вычисляет границы карты."""
         all_coords = []
@@ -308,9 +350,14 @@ class FiberNetworkFromRealData:
                     nearest_mufta = muff
         return nearest_mufta, min_distance
 
-    def find_path_through_infrastructure(self, start, end):
-        """Находит путь через дорожную сеть и колодцы."""
+    def find_path_through_roads_only(self, start, end):
+        """Находит путь строго по дорожной сети, не пересекая жилые зоны."""
+        print(f"\n=== ПОИСК ПУТИ ПО ДОРОГАМ ===")
+        print(f"От: ({start[0]:.6f}, {start[1]:.6f})")
+        print(f"До: ({end[0]:.6f}, {end[1]:.6f})")
+        
         def find_nearest_road_node(point):
+            """Находит ближайший узел дорожной сети."""
             min_dist = float('inf')
             nearest_node_id = None
             px, py = point
@@ -319,48 +366,122 @@ class FiberNetworkFromRealData:
                 if dist < min_dist:
                     min_dist = dist
                     nearest_node_id = node_id
-            return nearest_node_id
+            return nearest_node_id, min_dist
 
-        def dijkstra(start_node_id, end_node_id):
+        def dijkstra_with_path_info(start_node_id, end_node_id):
+            """Алгоритм Дейкстры с детальной информацией о пути."""
             visited = set()
             min_heap = [(0, start_node_id, [])]
+            distances = defaultdict(lambda: float('inf'))
+            distances[start_node_id] = 0
+            
             while min_heap:
                 cost, current_node, path = heapq.heappop(min_heap)
+                
                 if current_node in visited:
                     continue
+                    
                 visited.add(current_node)
                 path = path + [current_node]
+                
                 if current_node == end_node_id:
-                    return [self.road_nodes[nid] for nid in path]
+                    # Конвертируем node_id обратно в координаты
+                    road_path = [self.road_nodes[nid] for nid in path]
+                    return road_path, cost
+                
                 for neighbor, weight in self.road_graph.get(current_node, []):
                     if neighbor not in visited:
-                        heapq.heappush(min_heap, (cost + weight, neighbor, path))
-            return []
+                        new_cost = cost + weight
+                        if new_cost < distances[neighbor]:
+                            distances[neighbor] = new_cost
+                            heapq.heappush(min_heap, (new_cost, neighbor, path))
+            
+            return [], float('inf')
 
-        path_coords = [start]
-        for well in self.wells:
-            wx, wy, _, _ = well
-            dist_to_start = math.hypot(start[0] - wx, start[1] - wy)
-            dist_to_end = math.hypot(end[0] - wx, end[1] - wy)
-            if dist_to_start < 0.005 and dist_to_end < 0.005:
-                path_coords.append((wx, wy))
-        path_coords.append(end)
+        # Найти ближайшие узлы дорожной сети
+        start_node_id, start_distance = find_nearest_road_node(start)
+        end_node_id, end_distance = find_nearest_road_node(end)
+        
+        print(f"Ближайший узел к началу: {start_node_id}, расстояние: {start_distance*111139:.2f} м")
+        print(f"Ближайший узел к концу: {end_node_id}, расстояние: {end_distance*111139:.2f} м")
+        
+        if not start_node_id or not end_node_id:
+            print("Не удалось найти подходящие узлы дорожной сети!")
+            return [start, end], 0
+        
+        # Найти путь по дорогам
+        road_path, total_road_distance = dijkstra_with_path_info(start_node_id, end_node_id)
+        
+        if not road_path:
+            print("Путь по дорогам не найден!")
+            return [start, end], 0
+        
+        # Добавить соединения от/до зданий
+        final_path = [start] + road_path + [end]
+        
+        # Убрать дубликаты соседних точек
+        cleaned_path = [final_path[0]]
+        for i in range(1, len(final_path)):
+            if final_path[i] != cleaned_path[-1]:
+                cleaned_path.append(final_path[i])
+        
+        # Вычислить общую длину пути
+        total_distance = start_distance  # От здания до дороги
+        total_distance += total_road_distance  # По дорогам
+        total_distance += end_distance  # От дороги до муфты
+        total_distance_meters = total_distance * 111139  # Конвертация в метры
+        
+        print(f"Путь найден! Общая длина: {total_distance_meters:.2f} м")
+        print(f"Количество точек в пути: {len(cleaned_path)}")
+        
+        # Анализ пересечений в пути
+        intersections_in_path = []
+        for i, point in enumerate(cleaned_path[1:-1], 1):  # Исключаем начало и конец
+            # Проверяем, является ли эта точка пересечением
+            for potential_mh in self.potential_manholes:
+                if abs(point[0] - potential_mh['coordinates'][0]) < 1e-5 and \
+                   abs(point[1] - potential_mh['coordinates'][1]) < 1e-5:
+                    intersections_in_path.append({
+                        'position_in_path': i,
+                        'coordinates': point,
+                        'manhole_id': potential_mh['id'],
+                        'connections': potential_mh['connections']
+                    })
+                    break
+        
+        if intersections_in_path:
+            print(f"\nПересечения на пути (потенциальные колодцы):")
+            for intersection in intersections_in_path:
+                print(f"  {intersection['manhole_id']}: позиция {intersection['position_in_path']}, "
+                      f"координаты ({intersection['coordinates'][0]:.6f}, {intersection['coordinates'][1]:.6f}), "
+                      f"соединений: {intersection['connections']}")
+        else:
+            print("\nНа пути нет пересечений дорог.")
+        
+        print("=" * 50)
+        
+        return cleaned_path, total_distance_meters
 
-        if self.road_nodes:
-            start_node_id = find_nearest_road_node(start)
-            end_node_id = find_nearest_road_node(end)
-            if start_node_id and end_node_id:
-                road_path = dijkstra(start_node_id, end_node_id)
-                if road_path:
-                    if road_path[0] != start:
-                        road_path = [start] + road_path
-                    if road_path[-1] != end:
-                        road_path.append(end)
-                    return road_path
-        return path_coords
+    def calculate_path_distance(self, path_coords):
+        """Вычисляет общее расстояние пути в метрах."""
+        if len(path_coords) < 2:
+            return 0
+        
+        total_distance = 0
+        for i in range(len(path_coords) - 1):
+            x1, y1 = path_coords[i]
+            x2, y2 = path_coords[i + 1]
+            # Приблизительное расстояние в метрах (для небольших расстояний)
+            distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2) * 111139
+            total_distance += distance
+        
+        return total_distance
 
-    def visualize_path_plotly(self, start, end, path_coords, fibers_needed, mufta):
+    def visualize_path_plotly(self, start, end, path_coords, fibers_needed, mufta, total_distance):
         """Визуализирует сеть и маршрут с помощью Plotly."""
+        print(f"\n=== ВИЗУАЛИЗАЦИЯ МАРШРУТА ===")
+        print(f"Общая длина маршрута: {total_distance:.2f} м")
+        
         fig = go.Figure()
 
         # Дороги (серые линии)
@@ -382,14 +503,32 @@ class FiberNetworkFromRealData:
             xs.append(x)
             ys.append(y)
             labels.append(f"Колодец: {name} (ID: {well_id})")
-        fig.add_trace(go.Scattergl(
-            x=xs, y=ys,
-            mode='markers',
-            marker=dict(color='blue', size=10, line=dict(width=1, color='darkblue')),
-            name='Колодец',
-            text=labels,
-            hoverinfo='text'
-        ))
+        if xs:
+            fig.add_trace(go.Scattergl(
+                x=xs, y=ys,
+                mode='markers',
+                marker=dict(color='blue', size=10, line=dict(width=1, color='darkblue')),
+                name='Существующий колодец',
+                text=labels,
+                hoverinfo='text'
+            ))
+
+        # Потенциальные колодцы (фиолетовые ромбы)
+        if self.potential_manholes:
+            xs, ys, labels = [], [], []
+            for mh in self.potential_manholes:
+                x, y = mh['coordinates']
+                xs.append(x)
+                ys.append(y)
+                labels.append(f"Потенциальный колодец: {mh['id']}<br>Соединений: {mh['connections']}")
+            fig.add_trace(go.Scattergl(
+                x=xs, y=ys,
+                mode='markers',
+                marker=dict(color='blueviolet', size=8, symbol='diamond', line=dict(width=1, color='purple')),
+                name='Потенциальный колодец',
+                text=labels,
+                hoverinfo='text'
+            ))
 
         # Муфты (красные круги)
         xs, ys, labels = [], [], []
@@ -397,14 +536,15 @@ class FiberNetworkFromRealData:
             xs.append(x)
             ys.append(y)
             labels.append(f"Муфта ID: {muff_id}<br>Свободно волокон: {free_vol}")
-        fig.add_trace(go.Scattergl(
-            x=xs, y=ys,
-            mode='markers',
-            marker=dict(color='red', size=10, line=dict(width=1, color='darkred')),
-            name='Муфта',
-            text=labels,
-            hoverinfo='text'
-        ))
+        if xs:
+            fig.add_trace(go.Scattergl(
+                x=xs, y=ys,
+                mode='markers',
+                marker=dict(color='red', size=10, line=dict(width=1, color='darkred')),
+                name='Муфта',
+                text=labels,
+                hoverinfo='text'
+            ))
 
         # Здания (оранжевые полигоны)
         for b in self.building_polygons:
@@ -418,7 +558,7 @@ class FiberNetworkFromRealData:
                     x=xs, y=ys,
                     mode='lines',
                     fill='toself',
-                    fillcolor='rgba(255, 165, 0, 0.5)',
+                    fillcolor='rgba(255, 165, 0, 0.3)',
                     line=dict(color='brown', width=1.5),
                     name='Здание',
                     text=[f"{name}<br>Квартир: {apartments}"] * len(xs),
@@ -432,7 +572,7 @@ class FiberNetworkFromRealData:
                         x=xs, y=ys,
                         mode='lines',
                         fill='toself',
-                        fillcolor='rgba(255, 165, 0, 0.5)',
+                        fillcolor='rgba(255, 165, 0, 0.3)',
                         line=dict(color='brown', width=1.5),
                         name='Здание',
                         text=[f"{name}<br>Квартир: {apartments}"] * len(xs),
@@ -440,62 +580,36 @@ class FiberNetworkFromRealData:
                         showlegend=False
                     ))
 
-        # Маршрут (красная линия)
-        if path_coords:
+        # Маршрут (толстая красная линия)
+        if path_coords and len(path_coords) > 1:
             xs, ys = zip(*path_coords)
             fig.add_trace(go.Scattergl(
                 x=xs, y=ys,
-                mode='lines',
+                mode='lines+markers',
                 line=dict(color='red', width=4),
-                name='Маршрут',
+                marker=dict(color='red', size=6),
+                name=f'Маршрут ({total_distance:.0f}м)',
                 hoverinfo='none'
             ))
 
-            # Add blueviolet dots for intersection nodes (excluding start, end, manholes, muftas)
-            intersection_nodes = []
-            for node in path_coords[1:-1]:  # Skip start and end
-                is_special_node = False
-                # Check if node is a manhole
-                for well in self.wells:
-                    if abs(node[0] - well[0]) < 1e-6 and abs(node[1] - well[1]) < 1e-6:
-                        is_special_node = True
-                        break
-                # Check if node is a mufta
-                for muff in self.muffs:
-                    if abs(node[0] - muff[0]) < 1e-6 and abs(node[1] - muff[1]) < 1e-6:
-                        is_special_node = True
-                        break
-                if not is_special_node:
-                    intersection_nodes.append(node)
-            
-            if intersection_nodes:
-                xs_inter, ys_inter = zip(*intersection_nodes)
-                fig.add_trace(go.Scattergl(
-                    x=xs_inter, y=ys_inter,
-                    mode='markers',
-                    marker=dict(color='blueviolet', size=8),
-                    name='Пересечения',
-                    hoverinfo='none'
-                ))
-
-        # Муфта (зеленый квадрат)
+        # Целевая муфта (зеленый квадрат)
         fig.add_trace(go.Scattergl(
             x=[mufta[0]], y=[mufta[1]],
             mode='markers',
-            marker=dict(color='green', size=14, symbol='square', line=dict(width=1, color='black')),
-            name=f'Муфта (ID: {mufta[3]})',
+            marker=dict(color='green', size=16, symbol='square', line=dict(width=2, color='black')),
+            name=f'Целевая муфта (ID: {mufta[3]})',
             hoverinfo='text',
             text=[f'Муфта ID: {mufta[3]}<br>Свободно волокон: {mufta[2]}']
         ))
 
-        # Здание (черный квадрат)
+        # Целевое здание (черный квадрат)
         fig.add_trace(go.Scattergl(
             x=[start[0]], y=[start[1]],
             mode='markers',
-            marker=dict(color='black', size=14, symbol='square', line=dict(width=1, color='white')),
-            name='Здание (старт)',
+            marker=dict(color='black', size=16, symbol='square', line=dict(width=2, color='white')),
+            name='Целевое здание',
             hoverinfo='text',
-            text=[f'Здание<br>Требуется волокон: {fibers_needed}']
+            text=[f'Здание<br>Требуется волокон: {fibers_needed}<br>Расстояние до муфты: {total_distance:.0f}м']
         ))
 
         # Вычисляем границы для начального зума
@@ -507,25 +621,29 @@ class FiberNetworkFromRealData:
 
         # Настройка графика
         fig.update_layout(
-            title="Интерактивный маршрут подключения",
+            title=f"Оптимальный маршрут подключения (Длина: {total_distance:.0f}м)",
             xaxis_title="Долгота",
             yaxis_title="Широта",
             showlegend=True,
-            legend=dict(x=0.01, y=0.99, bgcolor='rgba(255, 255, 255, 0.8)'),
+            legend=dict(x=0.01, y=0.99, bgcolor='rgba(255, 255, 255, 0.9)'),
             hovermode='closest',
             dragmode='pan',
             uirevision='constant',
-            margin=dict(l=0, r=0, t=50, b=0),
+            margin=dict(l=0, r=0, t=60, b=0),
             xaxis=dict(
                 range=x_range,
                 scaleanchor="y",
                 scaleratio=1,
-                showgrid=False,
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='lightgray',
                 zeroline=False,
             ),
             yaxis=dict(
                 range=y_range,
-                showgrid=False,
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='lightgray',
                 zeroline=False
             ),
             plot_bgcolor='white',
@@ -535,6 +653,7 @@ class FiberNetworkFromRealData:
         # Сохраняем график в HTML для отладки
         fig.write_html("network_visualization.html")
         print("График сохранен в 'network_visualization.html'")
+        print("=" * 50)
 
         # Показываем график
         fig.show()
@@ -555,6 +674,10 @@ if __name__ == "__main__":
         if file and not os.path.exists(file):
             print(f"Файл {file} не найден, будут использованы тестовые данные.")
 
+    print("=" * 60)
+    print("СИСТЕМА ПЛАНИРОВАНИЯ ОПТИЧЕСКИХ СЕТЕЙ")
+    print("=" * 60)
+
     network = FiberNetworkFromRealData(
         roads_file=roads_file,
         muffs_file=muffs_file,
@@ -563,40 +686,113 @@ if __name__ == "__main__":
         building_centers_file=building_centers_file
     )
 
-    print(f"Дороги: {len(network.roads)}, Муфты: {len(network.muffs)}, Колодцы: {len(network.wells)}, Здания: {len(network.buildings)}")
+    print(f"\n=== ЗАГРУЖЕННЫЕ ДАННЫЕ ===")
+    print(f"Дороги: {len(network.roads)}")
+    print(f"Узлы дорожной сети: {len(network.road_nodes)}")
+    print(f"Муфты: {len(network.muffs)}")
+    print(f"Существующие колодцы: {len(network.wells)}")
+    print(f"Здания (полигоны): {len(network.building_polygons)}")
+    print(f"Здания (центроиды): {len(network.buildings)}")
     print(f"Тестовые здания: {len(network.test_buildings)}")
+    print(f"Потенциальные колодцы: {len(network.potential_manholes)}")
 
+    # Выбор здания для подключения
     if network.buildings:
         target_building = random.choice(network.buildings)
         building_point = target_building['centroid']
         fibers_needed = target_building['fibers_needed']
-        print(f"Выбрано реальное здание: {target_building['name']}, центроид: {building_point}, требуется волокон: {fibers_needed}")
+        print(f"\n=== ВЫБРАННОЕ ЗДАНИЕ ===")
+        print(f"Название: {target_building['name']}")
+        print(f"Координаты: ({building_point[0]:.6f}, {building_point[1]:.6f})")
+        print(f"Квартир: {target_building['apartments']}")
+        print(f"Процент проникновения: {target_building['penetration_rate']:.1%}")
+        print(f"Требуется волокон: {fibers_needed}")
     elif network.test_buildings:
         target_building = random.choice(network.test_buildings)
         building_point = (target_building[0], target_building[1])
         apartments = target_building[2]
         penetration_rate = target_building[3]
         fibers_needed = network._calculate_fibers_needed(apartments, penetration_rate)
-        print(f"Выбрано тестовое здание, координаты: {building_point}, требуется волокон: {fibers_needed}")
+        print(f"\n=== ВЫБРАННОЕ ТЕСТОВОЕ ЗДАНИЕ ===")
+        print(f"Координаты: ({building_point[0]:.6f}, {building_point[1]:.6f})")
+        print(f"Квартир: {apartments}")
+        print(f"Процент проникновения: {penetration_rate:.1%}")
+        print(f"Требуется волокон: {fibers_needed}")
     else:
-        print("Нет доступных зданий для подключения.")
+        print("\nОШИБКА: Нет доступных зданий для подключения.")
         exit(1)
 
     if not network.muffs:
-        print("Нет доступных муфт для подключения.")
+        print("\nОШИБКА: Нет доступных муфт для подключения.")
         exit(1)
 
+    # Поиск ближайшей подходящей муфты
+    print(f"\n=== ПОИСК МУФТЫ ===")
     nearest_mufta, distance = network.find_nearest_mufta(building_point, fibers_needed, max_distance=500)
     if nearest_mufta is None:
-        print(f"Не найдено муфт в радиусе 500 метров с достаточным количеством волокон (>= {fibers_needed}).")
-        exit(1)
-    print(f"Ближайшая муфта: ID {nearest_mufta[3]}, координаты: ({nearest_mufta[0]}, {nearest_mufta[1]}), расстояние: {distance:.2f} м, свободно волокон: {nearest_mufta[2]}")
+        print(f"ОШИБКА: Не найдено муфт в радиусе 500 метров с достаточным количеством волокон (>= {fibers_needed}).")
+        # Попробуем найти любую ближайшую муфту
+        nearest_mufta = min(network.muffs, key=lambda m: math.sqrt((building_point[0] - m[0])**2 + (building_point[1] - m[1])**2))
+        distance = math.sqrt((building_point[0] - nearest_mufta[0])**2 + (building_point[1] - nearest_mufta[1])**2) * 111139
+        print(f"Использую ближайшую доступную муфту (может не хватить волокон):")
+    
+    print(f"Выбранная муфта:")
+    print(f"  ID: {nearest_mufta[3]}")
+    print(f"  Координаты: ({nearest_mufta[0]:.6f}, {nearest_mufta[1]:.6f})")
+    print(f"  Прямое расстояние: {distance:.2f} м")
+    print(f"  Свободно волокон: {nearest_mufta[2]}")
+    print(f"  Достаточно волокон: {'Да' if nearest_mufta[2] >= fibers_needed else 'НЕТ'}")
 
-    path = network.find_path_through_infrastructure(building_point, (nearest_mufta[0], nearest_mufta[1]))
-    print(f"Маршрут (здание → муфта): {path}")
+    # Поиск оптимального пути по дорогам
+    path, total_distance = network.find_path_through_roads_only(building_point, (nearest_mufta[0], nearest_mufta[1]))
+    
+    print(f"\n=== ИТОГОВЫЙ МАРШРУТ ===")
+    print(f"Количество точек в маршруте: {len(path)}")
+    print(f"Общая длина маршрута: {total_distance:.2f} м")
+    print(f"Экономия по сравнению с прямой линией: {abs(total_distance - distance):.2f} м")
+    
+    # Детализация маршрута
+    print(f"\nДетализация маршрута:")
+    for i, point in enumerate(path):
+        if i == 0:
+            print(f"  {i+1}. СТАРТ - Здание: ({point[0]:.6f}, {point[1]:.6f})")
+        elif i == len(path) - 1:
+            print(f"  {i+1}. ФИНИШ - Муфта ID {nearest_mufta[3]}: ({point[0]:.6f}, {point[1]:.6f})")
+        else:
+            # Проверяем, является ли точка существующим колодцем
+            is_existing_well = False
+            for well in network.wells:
+                if abs(point[0] - well[0]) < 1e-5 and abs(point[1] - well[1]) < 1e-5:
+                    print(f"  {i+1}. Существующий колодец '{well[3]}': ({point[0]:.6f}, {point[1]:.6f})")
+                    is_existing_well = True
+                    break
+            
+            if not is_existing_well:
+                # Проверяем, является ли точка потенциальным колодцем
+                is_potential_mh = False
+                for mh in network.potential_manholes:
+                    if abs(point[0] - mh['coordinates'][0]) < 1e-5 and abs(point[1] - mh['coordinates'][1]) < 1e-5:
+                        print(f"  {i+1}. {mh['id']} (пересечение дорог): ({point[0]:.6f}, {point[1]:.6f})")
+                        is_potential_mh = True
+                        break
+                
+                if not is_potential_mh:
+                    print(f"  {i+1}. Узел дороги: ({point[0]:.6f}, {point[1]:.6f})")
 
+    # Визуализация
     try:
-        network.visualize_path_plotly(start=building_point, end=(nearest_mufta[0], nearest_mufta[1]), path_coords=path, fibers_needed=fibers_needed, mufta=nearest_mufta)
+        network.visualize_path_plotly(
+            start=building_point, 
+            end=(nearest_mufta[0], nearest_mufta[1]), 
+            path_coords=path, 
+            fibers_needed=fibers_needed, 
+            mufta=nearest_mufta,
+            total_distance=total_distance
+        )
     except Exception as e:
         print(f"Ошибка при визуализации: {e}")
         print("Проверьте 'network_visualization.html' для результатов.")
+
+    print(f"\n{'='*60}")
+    print("АНАЛИЗ ЗАВЕРШЕН")
+    print(f"{'='*60}")
